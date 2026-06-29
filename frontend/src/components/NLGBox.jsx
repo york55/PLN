@@ -1,4 +1,5 @@
 import React from 'react'
+import { ThumbsUp, AlertTriangle, Star, CheckCircle2 } from 'lucide-react'
 
 const BRAND = {
   falabella:    { accent: '#6abf3a', bg: '#F4FBF0', border: '#d0e8c4', logo: '/fotos/Falabella.png' },
@@ -20,14 +21,14 @@ export default function NLGBox({ nlg, fuente }) {
 
       {/* Puntos positivos */}
       <div style={s.fila}>
-        <span style={s.iconoPos}>👍</span>
+        <ThumbsUp size={14} style={{ color: brand.accent, flexShrink: 0, marginTop: 1 }} />
         <span style={s.texto}>{nlg.resumen_positivo}</span>
       </div>
 
       {/* Puntos negativos */}
       {nlg.resumen_negativo && (
         <div style={s.fila}>
-          <span style={s.iconoNeg}>⚠️</span>
+          <AlertTriangle size={14} style={{ color: '#d97706', flexShrink: 0, marginTop: 1 }} />
           <span style={s.texto}>{nlg.resumen_negativo}</span>
         </div>
       )}
@@ -38,11 +39,13 @@ export default function NLGBox({ nlg, fuente }) {
       {/* Chips */}
       <div style={s.chips}>
         <span style={{ ...s.chip, borderColor: brand.accent, color: brand.accent }}>
-          ⭐ {Number(nlg.puntuacion).toFixed(1)} / 5
+          <Star size={11} fill={brand.accent} stroke={brand.accent} />
+          {Number(nlg.puntuacion).toFixed(1)} / 5
         </span>
         {nlg.recomendado && (
           <span style={{ ...s.chip, background: brand.accent, color: '#fff', borderColor: brand.accent }}>
-            ✓ Recomendado
+            <CheckCircle2 size={11} />
+            Recomendado
           </span>
         )}
       </div>
@@ -82,8 +85,6 @@ const s = {
     gap: 8,
     alignItems: 'flex-start',
   },
-  iconoPos: { fontSize: 14, flexShrink: 0, marginTop: 1 },
-  iconoNeg: { fontSize: 14, flexShrink: 0, marginTop: 1 },
   texto: {
     fontSize: 13,
     color: '#444',

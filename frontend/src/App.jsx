@@ -1,71 +1,98 @@
 import React, { useState } from 'react'
+import { Search, Loader2, AlertCircle, Sparkles, Hash } from 'lucide-react'
 import { useProductSearch } from './useProductSearch'
 import ProductCard from './components/ProductCard'
 import NLGBox from './components/NLGBox'
 
-// Importa tus logos así en tu proyecto:
-// import LogoFalabella from './assets/fotos/Falabella.png'
-// import LogoML       from './assets/fotos/MercadoLibre.png'
-
 export default function App() {
   const [query, setQuery] = useState('')
+  const [k, setK] = useState(3)
   const { resultados, cargando, error, buscar } = useProductSearch()
 
-  function handleBuscar() { buscar(query) }
+  function handleBuscar() { buscar(query, k) }
   function handleKey(e)   { if (e.key === 'Enter') handleBuscar() }
 
   return (
     <div style={s.page}>
 
-      {/* ── HEADER ── */}
-      <header style={s.header}>
-        <div style={s.headerInner}>
+      {/* ── SIDEBAR ── */}
+      <aside style={s.sidebar}>
+        <div style={s.sidebarHeader}>
           <div style={s.logoRow}>
-            {/* Reemplaza los src con tus imports reales */}
             <img src="/fotos/Falabella.png"    alt="Falabella"    style={s.logoFal} />
             <span style={s.logoDivider}>vs</span>
             <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.logoML}  />
           </div>
           <p style={s.subtitle}>Compara productos con búsqueda semántica e inteligencia artificial</p>
         </div>
-      </header>
 
-      {/* ── SEARCH ── */}
-      <main style={s.main}>
-        <div style={s.searchCard}>
-          <div style={s.searchRow}>
-            <div style={s.inputWrapper}>
-              <span style={s.searchIcon}>🔍</span>
-              <input
-                style={s.input}
-                type="text"
-                placeholder="¿Qué producto estás buscando?"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={handleKey}
-              />
-            </div>
-            <button style={s.btn(cargando)} onClick={handleBuscar} disabled={cargando}>
-              {cargando ? 'Buscando...' : 'Comparar'}
-            </button>
+        <div style={s.searchForm}>
+          <label style={s.label}>Producto a buscar</label>
+          <div style={s.inputWrapper}>
+            <Search size={16} style={s.searchIcon} />
+            <input
+              style={s.input}
+              type="text"
+              placeholder="Ej: audífonos bluetooth"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleKey}
+            />
           </div>
-          <p style={s.hint}>Ej: audífonos bluetooth, televisor 55 pulgadas, cafetera automática</p>
+
+          <label style={s.label}>Resultados por tienda</label>
+          <div style={s.inputWrapper}>
+            <Hash size={16} style={s.searchIcon} />
+            <input
+              style={s.input}
+              type="number"
+              min={1}
+              max={10}
+              value={k}
+              onChange={e => setK(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+              onKeyDown={handleKey}
+            />
+          </div>
+
+          <button style={s.btn(cargando)} onClick={handleBuscar} disabled={cargando}>
+            {cargando ? <Loader2 size={16} style={s.spinIcon} /> : <Search size={16} />}
+            {cargando ? 'Buscando...' : 'Comparar'}
+          </button>
+
+          <p style={s.hint}>Se mostrarán {k} resultado{k !== 1 ? 's' : ''} de cada tienda.</p>
         </div>
 
-        {/* ── ESTADOS ── */}
+        <footer style={s.footer}>
+          Búsqueda semántica con FAISS<br />
+          Resúmenes con LLaMA 3.3<br />
+          Datos de Falabella y MercadoLibre Perú
+        </footer>
+      </aside>
+
+      {/* ── CONTENIDO ── */}
+      <main style={s.main}>
+
+        {!resultados && !cargando && !error && (
+          <div style={s.empty}>
+            <Search size={32} style={{ color: '#ccc' }} />
+            <p style={s.emptyText}>Ingresa un producto en la barra lateral para empezar a comparar.</p>
+          </div>
+        )}
+
         {cargando && (
           <div style={s.stateBox}>
-            <div style={s.spinner} />
+            <Loader2 size={28} style={s.spinIcon} />
             <p style={s.stateText}>Analizando reseñas y generando resumen con IA…</p>
           </div>
         )}
+
         {error && (
           <div style={{ ...s.stateBox, borderColor: '#fca5a5' }}>
-            <p style={{ ...s.stateText, color: '#dc2626' }}>⚠️ {error}</p>
+            <AlertCircle size={22} style={{ color: '#dc2626' }} />
+            <p style={{ ...s.stateText, color: '#dc2626' }}>{error}</p>
           </div>
         )}
 
-        {/* ── RESULTADOS ── */}
         {resultados && !cargando && (
           <>
             {/* Columnas lado a lado */}
@@ -103,7 +130,7 @@ export default function App() {
             {/* ── RESUMEN IA ── */}
             <div style={s.nlgSection}>
               <div style={s.nlgHeader}>
-                <span style={s.nlgIcon}>✨</span>
+                <Sparkles size={15} style={{ color: '#888' }} />
                 <span style={s.nlgTitle}>Resumen generado por IA</span>
                 <div style={s.nlgLine} />
               </div>
@@ -115,10 +142,6 @@ export default function App() {
           </>
         )}
       </main>
-
-      <footer style={s.footer}>
-        Búsqueda semántica con FAISS · Resúmenes con LLaMA 3.3 · Datos de Falabella y MercadoLibre Perú
-      </footer>
     </div>
   )
 }
@@ -127,77 +150,77 @@ export default function App() {
 const s = {
   page: {
     minHeight: '100vh',
+    display: 'flex',
     background: '#F7F7F5',
     fontFamily: "'Inter', system-ui, sans-serif",
     color: '#1a1a1a',
   },
 
-  // Header
-  header: {
+  // Sidebar
+  sidebar: {
+    width: 320,
+    flexShrink: 0,
     background: '#fff',
-    borderBottom: '1px solid #E8E8E6',
-    padding: '1.5rem 2rem',
-  },
-  headerInner: {
-    maxWidth: 900,
-    margin: '0 auto',
+    borderRight: '1px solid #E8E8E6',
+    padding: '2rem 1.5rem',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    gap: 10,
+    gap: '2rem',
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    height: '100vh',
+    overflowY: 'auto',
+    zIndex: 10,
+  },
+  sidebarHeader: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
   },
   logoRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 20,
+    gap: 14,
+    flexWrap: 'wrap',
   },
   logoFal: {
-    height: 36,
+    height: 60,
     objectFit: 'contain',
   },
   logoDivider: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: 600,
     color: '#aaa',
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
   },
   logoML: {
-    height: 48,
+    height: 78,
     objectFit: 'contain',
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#888',
     margin: 0,
-    textAlign: 'center',
+    lineHeight: 1.5,
   },
 
-  // Search
-  main: {
-    maxWidth: 900,
-    margin: '0 auto',
-    padding: '2rem 1.5rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2rem',
-  },
-  searchCard: {
-    background: '#fff',
-    border: '1px solid #E8E8E6',
-    borderRadius: 16,
-    padding: '1.25rem 1.5rem',
+  // Search form
+  searchForm: {
     display: 'flex',
     flexDirection: 'column',
     gap: 8,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   },
-  searchRow: {
-    display: 'flex',
-    gap: 10,
+  label: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#999',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginTop: 6,
   },
   inputWrapper: {
-    flex: 1,
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
@@ -205,7 +228,7 @@ const s = {
   searchIcon: {
     position: 'absolute',
     left: 12,
-    fontSize: 15,
+    color: '#aaa',
     pointerEvents: 'none',
   },
   input: {
@@ -220,7 +243,8 @@ const s = {
     boxSizing: 'border-box',
   },
   btn: (disabled) => ({
-    padding: '10px 24px',
+    marginTop: 10,
+    padding: '11px 20px',
     fontSize: 14,
     fontWeight: 600,
     border: 'none',
@@ -228,12 +252,57 @@ const s = {
     background: disabled ? '#ccc' : '#1a1a1a',
     color: '#fff',
     cursor: disabled ? 'not-allowed' : 'pointer',
-    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     transition: 'background 0.15s',
   }),
+  spinIcon: {
+    animation: 'spin 0.8s linear infinite',
+  },
   hint: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#aaa',
+    margin: '4px 0 0',
+    lineHeight: 1.4,
+  },
+
+  footer: {
+    marginTop: 'auto',
+    fontSize: 10.5,
+    color: '#bbb',
+    lineHeight: 1.7,
+    paddingTop: '1.5rem',
+    borderTop: '1px solid #E8E8E6',
+  },
+
+  // Main content
+  main: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 320,
+    padding: '2.5rem 3rem 3rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2rem',
+    maxWidth: 1500,
+  },
+
+  empty: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    minHeight: '60vh',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#aaa',
+    maxWidth: 280,
+    textAlign: 'center',
     margin: 0,
   },
 
@@ -242,19 +311,11 @@ const s = {
     background: '#fff',
     border: '1px solid #E8E8E6',
     borderRadius: 12,
-    padding: '2rem',
+    padding: '2.5rem',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     gap: 12,
-  },
-  spinner: {
-    width: 28,
-    height: 28,
-    border: '3px solid #E8E8E6',
-    borderTop: '3px solid #1a1a1a',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
   },
   stateText: {
     fontSize: 14,
@@ -275,21 +336,21 @@ const s = {
   },
   column: {
     flex: 1,
-    padding: '1.25rem',
+    padding: '1.5rem',
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 14,
     minWidth: 0,
   },
   colHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 10,
+    paddingBottom: 12,
     borderBottom: '1px solid #F0F0EE',
   },
   colLogo: {
-    height: 24,
+    height: 36,
     objectFit: 'contain',
   },
   colCount: {
@@ -304,9 +365,9 @@ const s = {
     flexShrink: 0,
   },
   cardList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 16,
   },
 
   // NLG
@@ -320,7 +381,6 @@ const s = {
     alignItems: 'center',
     gap: 8,
   },
-  nlgIcon: { fontSize: 16 },
   nlgTitle: {
     fontSize: 12,
     fontWeight: 600,
@@ -337,15 +397,6 @@ const s = {
   nlgGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: 10,
-  },
-
-  // Footer
-  footer: {
-    textAlign: 'center',
-    fontSize: 11,
-    color: '#bbb',
-    padding: '2rem',
-    borderTop: '1px solid #E8E8E6',
+    gap: 14,
   },
 }
