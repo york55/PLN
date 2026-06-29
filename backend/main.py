@@ -35,6 +35,10 @@ df_fal["reseña"] = df_fal["reseña"].fillna("")
 df_precios_fal  = pd.read_csv("productos_falabella.csv", encoding="utf-8-sig")
 precios_fal_idx = df_precios_fal.set_index("url")
 
+# ── CSV de precios MercadoLibre (cruce por idproducto) ───────────
+df_precios_ml  = pd.read_csv("productos_ml.csv", encoding="utf-8-sig")
+precios_ml_idx = df_precios_ml.set_index("idproducto")
+
 api_key = os.getenv("GROQ_API_KEY")
 cliente_groq = Groq(api_key=api_key)
 print("✅ Todo listo")
@@ -48,12 +52,25 @@ def buscar_en_ml(query: str, k: int = 5):
     resultados = []
     for d, i in zip(dist[0], idx[0]):
         fila = textos_ml.iloc[i]
-        resultados.append({
-            "idproducto": str(fila["idproducto"]),
+        id_producto = str(fila["idproducto"])
+
+        resultado = {
+            "idproducto": id_producto,
             "nombre":     str(fila["nombre"]),
             "url":        str(fila["url"]),
             "distancia":  round(float(d), 3),
-        })
+        }
+
+        # Cruce con CSV de precios ML
+        if id_producto in precios_ml_idx.index:
+            extra = precios_ml_idx.loc[id_producto]
+            moneda  = str(extra["moneda"]) if pd.notna(extra["moneda"]) else "PEN"
+            precio  = extra["precio"]
+            resultado["precio"]  = f"{moneda} {precio}"
+            resultado["moneda"]  = moneda
+            resultado["marca"]   = str(extra["marca"]) if pd.notna(extra["marca"]) else None
+
+        resultados.append(resultado)
     return resultados
 
 

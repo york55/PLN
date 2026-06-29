@@ -23,6 +23,32 @@ function Estrellas({ valor }) {
   )
 }
 
+// Normaliza el precio a "S/ X,XXX" independientemente de la fuente.
+// Falabella lo manda con símbolo ya incluido (ej. "S/ 1,299.00").
+// MercadoLibre lo manda como "PEN 1990" o "USD 49".
+function formatearPrecio(precio) {
+  if (!precio) return null
+  const str = precio.toString().trim()
+
+  // Ya tiene símbolo → devolver tal cual
+  if (str.startsWith('S/') || str.startsWith('$') || str.startsWith('USD')) {
+    return str
+  }
+
+  // Formato ML: "PEN 1990" o "USD 49"
+  const partes = str.split(' ')
+  const moneda = partes[0]
+  const numero = parseFloat(partes[partes.length - 1])
+
+  if (isNaN(numero)) return str
+
+  const formateado = numero.toLocaleString('es-PE')
+
+  if (moneda === 'PEN') return `S/ ${formateado}`
+  if (moneda === 'USD') return `$ ${formateado}`
+  return `${moneda} ${formateado}`
+}
+
 // Imagen con fallback en cascada: prueba cada URL candidata
 // (combinaciones de prefijo falabellaPE/tottusPE y sufijo _1/_01)
 // hasta que una cargue; si todas fallan, muestra un placeholder.
@@ -55,6 +81,7 @@ function ImagenProducto({ producto }) {
 export default function ProductCard({ producto, fuente }) {
   const brand = BRAND[fuente]
   const label = fuente === 'falabella' ? 'Falabella' : 'MercadoLibre'
+  const precioFormateado = formatearPrecio(producto.precio)
 
   return (
     <div style={s.card}>
@@ -75,9 +102,9 @@ export default function ProductCard({ producto, fuente }) {
         {/* Nombre */}
         <span style={s.nombre}>{producto.nombre}</span>
 
-        {/* Precio (solo Falabella por ahora) */}
-        {producto.precio && (
-          <span style={s.precio}>{producto.precio}</span>
+        {/* Precio (Falabella y MercadoLibre) */}
+        {precioFormateado && (
+          <span style={s.precio}>{precioFormateado}</span>
         )}
 
         {/* Rating calculado */}
