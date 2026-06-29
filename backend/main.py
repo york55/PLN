@@ -6,6 +6,10 @@ from groq import Groq
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -27,8 +31,8 @@ df_ml      = pd.read_csv("reviews_version_final.csv",     encoding="utf-8-sig")
 df_fal     = pd.read_csv("reseñas_hibrido_con_texto.csv", encoding="utf-8-sig")
 df_fal["reseña"] = df_fal["reseña"].fillna("")
 
-GROQ_API_KEY = "gsk_XXXXXXXXXXXXXXXXXXXXXXXX"  # ← reemplaza con tu clave
-cliente_groq = Groq(api_key=GROQ_API_KEY)
+api_key = os.getenv("GROQ_API_KEY")
+cliente_groq = Groq(api_key=api_key)
 print("✅ Todo listo")
 
 

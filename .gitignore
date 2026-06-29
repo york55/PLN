@@ -8,4 +8,4 @@ __pycache__/
 *.pyc
 
 # Variables de entorno
-.env
+backend/.env
