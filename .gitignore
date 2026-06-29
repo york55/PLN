@@ -1,0 +1,11 @@
+# Node
+frontend/node_modules/
+
+# Python
+backend/.venv/
+backend/venv/
+__pycache__/
+*.pyc
+
+# Variables de entorno
+.env
