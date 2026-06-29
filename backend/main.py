@@ -6,17 +6,21 @@ from groq import Groq
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # puerto por defecto de Vite/React
+    allow_origins=["http://localhost:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Cargar todo al iniciar (equivalente a Celda 3b del notebook) ──
+# ── Cargar todo al iniciar ────────────────────────────────────────
 print("Cargando modelo y datos...")
 modelo     = SentenceTransformer("all-MiniLM-L6-v2")
 index_ml   = faiss.read_index("index_mercadolibre.faiss")
@@ -27,12 +31,16 @@ df_ml      = pd.read_csv("reviews_version_final.csv",     encoding="utf-8-sig")
 df_fal     = pd.read_csv("reseñas_hibrido_con_texto.csv", encoding="utf-8-sig")
 df_fal["reseña"] = df_fal["reseña"].fillna("")
 
-GROQ_API_KEY = "gsk_XXXXXXXXXXXXXXXXXXXXXXXX"  # ← reemplaza con tu clave
-cliente_groq = Groq(api_key=GROQ_API_KEY)
+# ── CSV de precios Falabella (cruce por URL) ──────────────────────
+df_precios_fal  = pd.read_csv("productos_falabella.csv", encoding="utf-8-sig")
+precios_fal_idx = df_precios_fal.set_index("url")
+
+api_key = os.getenv("GROQ_API_KEY")
+cliente_groq = Groq(api_key=api_key)
 print("✅ Todo listo")
 
 
-# ── Funciones del notebook (copiadas tal cual) ────────────────────
+# ── Funciones ─────────────────────────────────────────────────────
 
 def buscar_en_ml(query: str, k: int = 5):
     q_vec = modelo.encode([query]).astype("float32")
@@ -41,12 +49,34 @@ def buscar_en_ml(query: str, k: int = 5):
     for d, i in zip(dist[0], idx[0]):
         fila = textos_ml.iloc[i]
         resultados.append({
-            "idproducto": str(fila["idproducto"]),   # fix: numpy type → str
+            "idproducto": str(fila["idproducto"]),
             "nombre":     str(fila["nombre"]),
             "url":        str(fila["url"]),
             "distancia":  round(float(d), 3),
         })
     return resultados
+
+
+def extraer_id_falabella(url: str) -> str:
+    """Extrae el ID de producto desde la URL de Falabella.
+    Ej: .../product/18245973/lavaseca.../18245973 -> '18245973'
+    """
+    return url.rstrip("/").split("/")[-1]
+
+
+def construir_urls_imagen_falabella(url: str) -> dict:
+    """El prefijo (falabellaPE vs tottusPE) y el sufijo del ID (_1 vs _01)
+    varían entre productos, así que se generan las 4 combinaciones para
+    que el frontend haga fallback en cascada."""
+    id_producto = extraer_id_falabella(url)
+    prefijos = ["falabellaPE", "tottusPE"]
+    sufijos  = ["_1", "_01"]
+    urls = [
+        f"https://media.falabella.com/{prefijo}/{id_producto}{sufijo}/w=1200,h=1200,fit=pad"
+        for prefijo in prefijos
+        for sufijo in sufijos
+    ]
+    return {"imagenes": urls}
 
 
 def buscar_en_falabella(query: str, k: int = 5):
@@ -55,13 +85,24 @@ def buscar_en_falabella(query: str, k: int = 5):
     resultados = []
     for d, i in zip(dist[0], idx[0]):
         fila = textos_fal.iloc[i]
-        resultados.append({
-            "product_id": int(fila["product_id"]),   # fix: numpy.int64 → int
+        url  = str(fila["url"])
+
+        resultado = {
+            "product_id": int(fila["product_id"]),
             "nombre":     str(fila["nombre"]),
             "marca":      str(fila["marca"]),
-            "url":        str(fila["url"]),
+            "url":        url,
             "distancia":  round(float(d), 3),
-        })
+            **construir_urls_imagen_falabella(url),
+        }
+
+        # Cruce con CSV de precios si la URL coincide
+        if url in precios_fal_idx.index:
+            extra = precios_fal_idx.loc[url]
+            resultado["precio"]      = str(extra["precio"])
+            resultado["num_resenas"] = int(extra["num_resenas"])
+
+        resultados.append(resultado)
     return resultados
 
 
@@ -75,12 +116,12 @@ def analizar_resenas(df, col_id, id_valor, col_resena, col_rating):
     positivas   = grupo[grupo[col_rating] >= 4][col_resena].tolist()
     negativas   = grupo[grupo[col_rating] <= 2][col_resena].tolist()
     return {
-        "total":              int(total),                        # fix: numpy.int64 → int
-        "rating_promedio":    round(float(rating_prom), 2),     # fix: numpy.float64 → float
-        "pct_positivas":      round(len(positivas) / total * 100, 1),
-        "pct_negativas":      round(len(negativas) / total * 100, 1),
-        "positivas_muestra":  sorted(positivas, key=len, reverse=True)[:4],
-        "negativas_muestra":  sorted(negativas, key=len, reverse=True)[:3],
+        "total":             int(total),
+        "rating_promedio":   round(float(rating_prom), 2),
+        "pct_positivas":     round(len(positivas) / total * 100, 1),
+        "pct_negativas":     round(len(negativas) / total * 100, 1),
+        "positivas_muestra": sorted(positivas, key=len, reverse=True)[:4],
+        "negativas_muestra": sorted(negativas, key=len, reverse=True)[:3],
     }
 
 

@@ -1,76 +1,116 @@
 import React from 'react'
+import { ThumbsUp, AlertTriangle, Star, CheckCircle2 } from 'lucide-react'
 
-const s = {
-  box: {
-    background: '#fafaf9',
-    border: '1px solid #e5e5e3',
-    borderRadius: 12,
-    padding: '1rem 1.25rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-  },
-  header: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 },
-  badge: (fuente) => ({
-    fontSize: 11,
-    padding: '2px 8px',
-    borderRadius: 6,
-    background: fuente === 'falabella' ? '#eff6ff' : '#fffbeb',
-    color:      fuente === 'falabella' ? '#1d4ed8' : '#b45309',
-    fontWeight: 500,
-  }),
-  nombreProd: { fontSize: 13, fontWeight: 500 },
-  fila:  { display: 'flex', gap: 10, fontSize: 13, lineHeight: 1.5 },
-  icono: { flexShrink: 0, fontSize: 16, marginTop: 1 },
-  conclusion: {
-    fontSize: 13,
-    color: '#666',
-    lineHeight: 1.5,
-    borderTop: '1px solid #e5e5e3',
-    paddingTop: 10,
-  },
-  chips: { display: 'flex', gap: 8 },
-  chip: {
-    fontSize: 12,
-    padding: '3px 10px',
-    borderRadius: 6,
-    border: '1px solid #e5e5e3',
-    color: '#555',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-  },
+const BRAND = {
+  falabella:    { accent: '#6abf3a', bg: '#F4FBF0', border: '#d0e8c4', logo: '/fotos/Falabella.png' },
+  mercadolibre: { accent: '#3d42a8', bg: '#F0F1FF', border: '#c8caef', logo: '/fotos/MercadoLibre.png' },
 }
 
 export default function NLGBox({ nlg, fuente }) {
   if (!nlg || nlg.error) return null
-  const label = fuente === 'falabella' ? 'Falabella' : 'MercadoLibre'
+  const brand = BRAND[fuente]
 
   return (
-    <div style={s.box}>
+    <div style={{ ...s.box, borderColor: brand.border, background: brand.bg }}>
+
+      {/* Header con logo */}
       <div style={s.header}>
-        <span style={s.badge(fuente)}>{label}</span>
-        <span style={s.nombreProd}>{nlg.nombre}</span>
+        <img src={brand.logo} alt={fuente} style={s.logo} />
+        <span style={s.nombre}>{nlg.nombre}</span>
       </div>
 
+      {/* Puntos positivos */}
       <div style={s.fila}>
-        <span style={{ ...s.icono, color: '#16a34a' }}>👍</span>
-        <span>{nlg.resumen_positivo}</span>
+        <ThumbsUp size={14} style={{ color: brand.accent, flexShrink: 0, marginTop: 1 }} />
+        <span style={s.texto}>{nlg.resumen_positivo}</span>
       </div>
 
+      {/* Puntos negativos */}
       {nlg.resumen_negativo && (
         <div style={s.fila}>
-          <span style={{ ...s.icono, color: '#d97706' }}>⚠️</span>
-          <span>{nlg.resumen_negativo}</span>
+          <AlertTriangle size={14} style={{ color: '#d97706', flexShrink: 0, marginTop: 1 }} />
+          <span style={s.texto}>{nlg.resumen_negativo}</span>
         </div>
       )}
 
-      <div style={s.conclusion}>{nlg.conclusion}</div>
+      {/* Conclusión */}
+      <p style={s.conclusion}>{nlg.conclusion}</p>
 
+      {/* Chips */}
       <div style={s.chips}>
-        <span style={s.chip}>⭐ {Number(nlg.puntuacion).toFixed(1)}/5</span>
-        {nlg.recomendado && <span style={s.chip}>✓ Recomendado</span>}
+        <span style={{ ...s.chip, borderColor: brand.accent, color: brand.accent }}>
+          <Star size={11} fill={brand.accent} stroke={brand.accent} />
+          {Number(nlg.puntuacion).toFixed(1)} / 5
+        </span>
+        {nlg.recomendado && (
+          <span style={{ ...s.chip, background: brand.accent, color: '#fff', borderColor: brand.accent }}>
+            <CheckCircle2 size={11} />
+            Recomendado
+          </span>
+        )}
       </div>
     </div>
   )
+}
+
+const s = {
+  box: {
+    border: '1px solid',
+    borderRadius: 14,
+    padding: '1.1rem 1.25rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    paddingBottom: 8,
+    borderBottom: '1px solid rgba(0,0,0,0.06)',
+  },
+  logo: {
+    height: 20,
+    objectFit: 'contain',
+    flexShrink: 0,
+  },
+  nombre: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#333',
+    lineHeight: 1.3,
+  },
+  fila: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  texto: {
+    fontSize: 13,
+    color: '#444',
+    lineHeight: 1.5,
+  },
+  conclusion: {
+    fontSize: 12,
+    color: '#666',
+    lineHeight: 1.55,
+    margin: 0,
+    borderTop: '1px solid rgba(0,0,0,0.06)',
+    paddingTop: 8,
+  },
+  chips: {
+    display: 'flex',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  chip: {
+    fontSize: 11,
+    padding: '3px 10px',
+    borderRadius: 6,
+    border: '1px solid',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
 }
