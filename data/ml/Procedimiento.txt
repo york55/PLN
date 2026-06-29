@@ -1,0 +1,19 @@
+Guía de ejecución de obtención de datos de MercadoLibre
+
+1. Configuración de entorno
+Ejecutar "powershell -ExecutionPolicy Bypass -File configurar_entorno.ps1" (otro powershell)
+
+2. Dejar un Chrome (navegador) con una sesión abierta en MercadoLibre
+
+3. Obtener productos
+Ejecutar "script1_productos.py" para obtener un csv de todos los productos
+
+4. Obtener reseñar con API
+
+4.1 Configurar entorno de NGROK (previa instalación y registro)
+	Ejecutar "callback_server.py" en la ruta en powershell
+	Ejecutar comando "ngrok http 8000" (otro powershell)
+
+4.2 Ejecutar script para obtener reseñas
+	Requisito: Un TOKEN válido de la API de Mercado Libre
+	Ejecutar "script2_reviews.py" para obtener un csv con las reseñas de los productos obtenidos
