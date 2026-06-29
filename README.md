@@ -1,11 +1,35 @@
 # PLN
 Repositorio para la TA de PLN
 
-Instalar requirements del back: pip install -r requirements.txt
+## Backend
 
-Correr backend: python -m uvicorn main:app --reload --port 8000
+Instalar requirements del back:
+```
+pip install -r requirements.txt
+```
 
-Levantar front: npm install
+Antes de correr el backend, debes agregar lo siguiente:
 
-Correr fron: npm run dev
+1. Coloca el archivo `backend/reseñas_hibrido_con_texto.csv` (este archivo no se puede subir a GitHub, así que debe agregarse manualmente).
+2. Crea el archivo `backend/.env` con tu API key de Groq:
 
+```
+GROQ_API_KEY="AQUI PONES EL API KEY"
+```
+
+Correr backend:
+```
+python -m uvicorn main:app --reload --port 8000
+```
+
+## Frontend
+
+Levantar front:
+```
+npm install
+```
+
+Correr front:
+```
+npm run dev
+```
