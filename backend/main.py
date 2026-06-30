@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
+from playwright.sync_api import sync_playwright
 
 load_dotenv()
 
@@ -27,9 +28,11 @@ index_ml   = faiss.read_index("index_mercadolibre.faiss")
 index_fal  = faiss.read_index("index_falabella.faiss")
 textos_ml  = pd.read_csv("textos_ml.csv")
 textos_fal = pd.read_csv("textos_falabella.csv")
-df_ml      = pd.read_csv("reviews_version_final.csv",     encoding="utf-8-sig")
+df_ml      = pd.read_csv("dataset_final.csv",     encoding="utf-8-sig")
 df_fal     = pd.read_csv("reseñas_hibrido_con_texto.csv", encoding="utf-8-sig")
 df_fal["reseña"] = df_fal["reseña"].fillna("")
+
+print(df_fal.columns.tolist())
 
 # ── CSV de precios Falabella (cruce por URL) ──────────────────────
 df_precios_fal  = pd.read_csv("productos_falabella.csv", encoding="utf-8-sig")
@@ -45,6 +48,27 @@ print("✅ Todo listo")
 
 
 # ── Funciones ─────────────────────────────────────────────────────
+
+def obtener_imagen_ml(url):
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+
+            page = browser.new_page()
+
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+            meta = page.locator('meta[property="og:image"]').first
+
+            imagen = meta.get_attribute("content")
+
+            browser.close()
+
+            return imagen
+
+    except Exception as e:
+        print(e)
+        return None
 
 def buscar_en_ml(query: str, k: int = 5):
     q_vec = modelo.encode([query]).astype("float32")
@@ -69,7 +93,11 @@ def buscar_en_ml(query: str, k: int = 5):
             resultado["precio"]  = f"{moneda} {precio}"
             resultado["moneda"]  = moneda
             resultado["marca"]   = str(extra["marca"]) if pd.notna(extra["marca"]) else None
-
+            num_resenas = len(df_ml[df_ml["idproducto"] == id_producto])
+            resultado["num_resenas"] = num_resenas
+            
+            # resultado["imagen"] = obtener_imagen_ml(resultado["url"])
+            
         resultados.append(resultado)
     return resultados
 
@@ -193,6 +221,10 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 3
 
+class ResumenRequest(BaseModel):
+    tienda: str
+    idproducto: str | None = None
+    product_id: int | None = None
 
 @app.get("/health")
 def health():
@@ -214,22 +246,55 @@ def nlg(req: QueryRequest):
 
     if not ml_res or not fal_res:
         raise HTTPException(status_code=404, detail="Sin resultados")
-
-    top_ml  = ml_res[0]
-    top_fal = fal_res[0]
-
-    an_ml  = analizar_resenas(df_ml,  "idproducto", top_ml["idproducto"],  "resena",  "rating")
-    an_fal = analizar_resenas(df_fal, "product_id", top_fal["product_id"], "reseña",  "rating")
+    
 
     return {
-        "falabella":    fal_res,
+        "falabella": fal_res,
         "mercadolibre": ml_res,
-        "nlg_fal": {
-            "nombre": top_fal["nombre"],
-            **generar_resumen(top_fal["nombre"], an_fal),
-        },
-        "nlg_ml": {
-            "nombre": top_ml["nombre"],
-            **generar_resumen(top_ml["nombre"], an_ml),
-        },
     }
+
+@app.post("/resumen")
+def resumen(req: ResumenRequest):
+
+    if req.tienda == "mercadolibre":
+
+        an_ml = analizar_resenas(
+            df_ml,
+            "idproducto",
+            req.idproducto,
+            "resena",
+            "rating"
+        )
+
+        nombre = df_ml.loc[
+            df_ml["idproducto"] == req.idproducto,
+            "nombre"
+        ].iloc[0]
+
+        return {
+            "nombre": nombre,
+            **generar_resumen(nombre, an_ml)
+        }
+
+
+    elif req.tienda == "falabella":
+
+        an_fal = analizar_resenas(
+            df_fal,
+            "product_id",
+            req.product_id,
+            "reseña",
+            "rating"
+        )
+
+        nombre = df_fal.loc[
+            df_fal["product_id"] == req.product_id,
+            "producto"
+        ].iloc[0]
+
+        return {
+            "nombre": nombre,
+            **generar_resumen(nombre, an_fal)
+        }
+
+    raise HTTPException(status_code=400, detail="Tienda inválida")

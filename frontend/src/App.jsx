@@ -9,8 +9,50 @@ export default function App() {
   const [k, setK] = useState(3)
   const { resultados, cargando, error, buscar } = useProductSearch()
 
+  const [resumenFal, setResumenFal] = useState(null)
+  const [resumenML, setResumenML] = useState(null)
+
+  const [seleccionFal, setSeleccionFal] = useState(null)
+  const [seleccionML, setSeleccionML] = useState(null)
+
+  async function cargarResumen(producto, fuente) {
+    try {
+      const body =
+        fuente === "falabella"
+          ? {
+            tienda: "falabella",
+            product_id: producto.product_id,
+          }
+          : {
+            tienda: "mercadolibre",
+            idproducto: producto.idproducto,
+          }
+
+      const res = await fetch("http://localhost:8000/resumen", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) return
+
+      const data = await res.json()
+
+      if (fuente === "falabella") {
+        setResumenFal(data)
+      } else {
+        setResumenML(data)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+
   function handleBuscar() { buscar(query, k) }
-  function handleKey(e)   { if (e.key === 'Enter') handleBuscar() }
+  function handleKey(e) { if (e.key === 'Enter') handleBuscar() }
 
   return (
     <div style={s.page}>
@@ -19,9 +61,9 @@ export default function App() {
       <aside style={s.sidebar}>
         <div style={s.sidebarHeader}>
           <div style={s.logoRow}>
-            <img src="/fotos/Falabella.png"    alt="Falabella"    style={s.logoFal} />
+            <img src="/fotos/Falabella.png" alt="Falabella" style={s.logoFal} />
             <span style={s.logoDivider}>vs</span>
-            <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.logoML}  />
+            <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.logoML} />
           </div>
           <p style={s.subtitle}>Compara productos con búsqueda semántica e inteligencia artificial</p>
         </div>
@@ -105,7 +147,16 @@ export default function App() {
                 </div>
                 <div style={s.cardList}>
                   {resultados.falabella.map((p, i) => (
-                    <ProductCard key={i} producto={p} fuente="falabella" />
+                    <ProductCard
+                      key={i}
+                      producto={p}
+                      fuente="falabella"
+                      seleccionado={seleccionFal === p.product_id}
+                      onClick={() => {
+                        setSeleccionFal(p.product_id)
+                        cargarResumen(p, "falabella")
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -121,7 +172,16 @@ export default function App() {
                 </div>
                 <div style={s.cardList}>
                   {resultados.mercadolibre.map((p, i) => (
-                    <ProductCard key={i} producto={p} fuente="mercadolibre" />
+                    <ProductCard
+                      key={i}
+                      producto={p}
+                      fuente="mercadolibre"
+                      seleccionado={seleccionML === p.idproducto}
+                      onClick={() => {
+                        setSeleccionML(p.idproducto)
+                        cargarResumen(p, "mercadolibre")
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -135,8 +195,8 @@ export default function App() {
                 <div style={s.nlgLine} />
               </div>
               <div style={s.nlgGrid}>
-                <NLGBox nlg={resultados.nlg_fal} fuente="falabella"    />
-                <NLGBox nlg={resultados.nlg_ml}  fuente="mercadolibre" />
+                <NLGBox nlg={resumenFal} fuente="falabella" />
+                <NLGBox nlg={resumenML} fuente="mercadolibre" />
               </div>
             </div>
           </>
