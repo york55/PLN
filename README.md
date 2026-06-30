@@ -39,3 +39,12 @@ Correr front:
 ```
 npm run dev
 ```
+
+USUARIOS EQUIVALENTES A INTEGRANTES DEL EQUIPO
+```
+Kiridas: U20222159
+york55: U20222232
+Alfredo123255: U20220825
+homew0rk79: U20222928
+Sheshe0529: U20220666
+...
