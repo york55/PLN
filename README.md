@@ -17,6 +17,12 @@ Antes de correr el backend, debes agregar lo siguiente:
 GROQ_API_KEY="AQUI PONES EL API KEY"
 ```
 
+Si por algun motivo sale un error de playwright hacer lo siguiente:
+
+```
+python -m playwright install
+```
+
 Correr backend:
 ```
 python -m uvicorn main:app --reload --port 8000

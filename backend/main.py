@@ -1,6 +1,7 @@
 import pandas as pd
 import faiss
 import json
+import re
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 from fastapi import FastAPI, HTTPException
@@ -44,6 +45,124 @@ precios_ml_idx = df_precios_ml.set_index("idproducto")
 
 api_key = os.getenv("GROQ_API_KEY")
 cliente_groq = Groq(api_key=api_key)
+
+# ── Pre-cálculo de stats ──────────────────────────────────────────
+def _precio_fal_a_float(precio_str):
+    """Convierte 'S/ 1,749' -> 1749.0"""
+    try:
+        return float(re.sub(r"[^\d.]", "", str(precio_str).replace(",", "")))
+    except:
+        return None
+
+df_precios_fal["precio_num"] = df_precios_fal["precio"].apply(_precio_fal_a_float)
+
+_stats_cache = None
+
+def _calcular_stats():
+    global _stats_cache
+    if _stats_cache:
+        return _stats_cache
+
+    # Distribución de ratings
+    dist_ratings_ml = (
+        df_ml["rating"]
+        .value_counts()
+        .reindex([1, 2, 3, 4, 5], fill_value=0)
+        .sort_index()
+        .to_dict()
+    )
+    dist_ratings_ml = {str(k): int(v) for k, v in dist_ratings_ml.items()}
+
+    dist_ratings_fal = (
+        df_fal["rating"]
+        .value_counts()
+        .reindex([1, 2, 3, 4, 5], fill_value=0)
+        .sort_index()
+        .to_dict()
+    )
+    dist_ratings_fal = {str(k): int(v) for k, v in dist_ratings_fal.items()}
+
+    # Top marcas por número de productos
+    top_marcas_ml = (
+        df_precios_ml["marca"]
+        .dropna()
+        .value_counts()
+        .head(10)
+        .to_dict()
+    )
+    top_marcas_ml = {str(k): int(v) for k, v in top_marcas_ml.items()}
+
+    top_marcas_fal = (
+        df_precios_fal["marca"]
+        .dropna()
+        .value_counts()
+        .head(10)
+        .to_dict()
+    )
+    top_marcas_fal = {str(k): int(v) for k, v in top_marcas_fal.items()}
+
+    # Rating promedio por categoría (solo ML tiene categoría)
+    rating_por_cat = (
+        df_ml.groupby("categoria")["rating"]
+        .agg(promedio="mean", total="count")
+        .query("total >= 50")
+        .sort_values("promedio", ascending=False)
+        .head(12)
+        .reset_index()
+    )
+    rating_por_categoria = [
+        {
+            "categoria": row["categoria"],
+            "rating_promedio": round(float(row["promedio"]), 2),
+            "total_resenas": int(row["total"]),
+        }
+        for _, row in rating_por_cat.iterrows()
+    ]
+
+    # Distribución de precios ML (en soles)
+    precios_ml_soles = df_precios_ml[df_precios_ml["moneda"] == "PEN"]["precio"].dropna()
+    bins   = [0, 100, 300, 500, 1000, 2000, 5000, float("inf")]
+    labels = ["<100", "100-300", "300-500", "500-1k", "1k-2k", "2k-5k", "5k+"]
+    dist_precios_ml = {}
+    for i, label in enumerate(labels):
+        lo, hi = bins[i], bins[i + 1]
+        dist_precios_ml[label] = int(((precios_ml_soles >= lo) & (precios_ml_soles < hi)).sum())
+
+    # Distribución de precios Falabella
+    precios_fal = df_precios_fal["precio_num"].dropna()
+    dist_precios_fal = {}
+    for i, label in enumerate(labels):
+        lo, hi = bins[i], bins[i + 1]
+        dist_precios_fal[label] = int(((precios_fal >= lo) & (precios_fal < hi)).sum())
+
+    # Resumen general
+    resumen = {
+        "ml": {
+            "total_productos":   int(len(df_precios_ml)),
+            "total_resenas":     int(len(df_ml)),
+            "rating_promedio":   round(float(df_ml["rating"].mean()), 2),
+            "precio_promedio":   round(float(precios_ml_soles.mean()), 2),
+            "total_marcas":      int(df_precios_ml["marca"].nunique()),
+            "total_categorias":  int(df_precios_ml["categoria"].nunique()),
+        },
+        "falabella": {
+            "total_productos":   int(len(df_precios_fal)),
+            "total_resenas":     int(len(df_fal)),
+            "rating_promedio":   round(float(df_fal["rating"].mean()), 2),
+            "precio_promedio":   round(float(precios_fal.mean()), 2),
+            "total_marcas":      int(df_precios_fal["marca"].nunique()),
+        },
+    }
+
+    _stats_cache = {
+        "resumen":              resumen,
+        "dist_ratings":         {"ml": dist_ratings_ml, "falabella": dist_ratings_fal},
+        "top_marcas":           {"ml": top_marcas_ml,   "falabella": top_marcas_fal},
+        "rating_por_categoria": rating_por_categoria,
+        "dist_precios":         {"ml": dist_precios_ml, "falabella": dist_precios_fal},
+    }
+    return _stats_cache
+
 print("✅ Todo listo")
 
 
@@ -53,19 +172,12 @@ def obtener_imagen_ml(url):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-
             page = browser.new_page()
-
             page.goto(url, wait_until="domcontentloaded", timeout=15000)
-
             meta = page.locator('meta[property="og:image"]').first
-
             imagen = meta.get_attribute("content")
-
             browser.close()
-
             return imagen
-
     except Exception as e:
         print(e)
         return None
@@ -85,34 +197,26 @@ def buscar_en_ml(query: str, k: int = 5):
             "distancia":  round(float(d), 3),
         }
 
-        # Cruce con CSV de precios ML
         if id_producto in precios_ml_idx.index:
             extra = precios_ml_idx.loc[id_producto]
             moneda  = str(extra["moneda"]) if pd.notna(extra["moneda"]) else "PEN"
             precio  = extra["precio"]
-            resultado["precio"]  = f"{moneda} {precio}"
-            resultado["moneda"]  = moneda
-            resultado["marca"]   = str(extra["marca"]) if pd.notna(extra["marca"]) else None
-            num_resenas = len(df_ml[df_ml["idproducto"] == id_producto])
-            resultado["num_resenas"] = num_resenas
-            
+            resultado["precio"]      = f"{moneda} {precio}"
+            resultado["moneda"]      = moneda
+            resultado["marca"]       = str(extra["marca"]) if pd.notna(extra["marca"]) else None
+            resultado["num_resenas"] = len(df_ml[df_ml["idproducto"] == id_producto])
+
             # resultado["imagen"] = obtener_imagen_ml(resultado["url"])
-            
+
         resultados.append(resultado)
     return resultados
 
 
 def extraer_id_falabella(url: str) -> str:
-    """Extrae el ID de producto desde la URL de Falabella.
-    Ej: .../product/18245973/lavaseca.../18245973 -> '18245973'
-    """
     return url.rstrip("/").split("/")[-1]
 
 
 def construir_urls_imagen_falabella(url: str) -> dict:
-    """El prefijo (falabellaPE vs tottusPE) y el sufijo del ID (_1 vs _01)
-    varían entre productos, así que se generan las 4 combinaciones para
-    que el frontend haga fallback en cascada."""
     id_producto = extraer_id_falabella(url)
     prefijos = ["falabellaPE", "tottusPE"]
     sufijos  = ["_1", "_01"]
@@ -141,7 +245,6 @@ def buscar_en_falabella(query: str, k: int = 5):
             **construir_urls_imagen_falabella(url),
         }
 
-        # Cruce con CSV de precios si la URL coincide
         if url in precios_fal_idx.index:
             extra = precios_fal_idx.loc[url]
             resultado["precio"]      = str(extra["precio"])
@@ -226,9 +329,15 @@ class ResumenRequest(BaseModel):
     idproducto: str | None = None
     product_id: int | None = None
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/stats")
+def stats():
+    return _calcular_stats()
 
 
 @app.post("/buscar")
@@ -246,18 +355,17 @@ def nlg(req: QueryRequest):
 
     if not ml_res or not fal_res:
         raise HTTPException(status_code=404, detail="Sin resultados")
-    
 
     return {
-        "falabella": fal_res,
+        "falabella":    fal_res,
         "mercadolibre": ml_res,
     }
+
 
 @app.post("/resumen")
 def resumen(req: ResumenRequest):
 
     if req.tienda == "mercadolibre":
-
         an_ml = analizar_resenas(
             df_ml,
             "idproducto",
@@ -265,20 +373,16 @@ def resumen(req: ResumenRequest):
             "resena",
             "rating"
         )
-
         nombre = df_ml.loc[
             df_ml["idproducto"] == req.idproducto,
             "nombre"
         ].iloc[0]
-
         return {
             "nombre": nombre,
             **generar_resumen(nombre, an_ml)
         }
 
-
     elif req.tienda == "falabella":
-
         an_fal = analizar_resenas(
             df_fal,
             "product_id",
@@ -286,12 +390,10 @@ def resumen(req: ResumenRequest):
             "reseña",
             "rating"
         )
-
         nombre = df_fal.loc[
             df_fal["product_id"] == req.product_id,
             "producto"
         ].iloc[0]
-
         return {
             "nombre": nombre,
             **generar_resumen(nombre, an_fal)
