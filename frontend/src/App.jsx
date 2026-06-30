@@ -5,7 +5,7 @@ import ProductCard from './components/ProductCard'
 import NLGBox from './components/NLGBox'
 import StatsPanel from './components/StatsPanel'
 
-export default function App() {
+export default function App() { 
   const [query, setQuery] = useState('')
   const [k, setK] = useState(3)
   const { resultados, cargando, error, buscar } = useProductSearch()

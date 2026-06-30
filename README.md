@@ -14,7 +14,7 @@ Antes de correr el backend, debes agregar lo siguiente:
 2. Crea el archivo `backend/.env` con tu API key de Groq:
 
 ```
-GROQ_API_KEY="AQUI PONES EL API KEY"
+GROQ_API_KEY="tu_api_key_aqui"
 ```
 
 Si por algun motivo sale un error de playwright hacer lo siguiente:
