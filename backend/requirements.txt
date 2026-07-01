@@ -5,3 +5,5 @@ faiss-cpu
 groq
 pandas
 pydantic
+playwright
+pysentimiento

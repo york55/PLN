@@ -1,16 +1,48 @@
 import React, { useState } from 'react'
-import { Search, Loader2, AlertCircle, Sparkles, Hash } from 'lucide-react'
+import { Search, Loader2, AlertCircle, Sparkles, Hash, BarChart2 } from 'lucide-react'
 import { useProductSearch } from './useProductSearch'
 import ProductCard from './components/ProductCard'
 import NLGBox from './components/NLGBox'
+import StatsPanel from './components/StatsPanel'
 
-export default function App() {
+export default function App() { 
   const [query, setQuery] = useState('')
   const [k, setK] = useState(3)
   const { resultados, cargando, error, buscar } = useProductSearch()
 
+  const [resumenFal, setResumenFal] = useState(null)
+  const [resumenML, setResumenML] = useState(null)
+
+  const [seleccionFal, setSeleccionFal] = useState(null)
+  const [seleccionML, setSeleccionML] = useState(null)
+
+  const [tab, setTab] = useState('buscar')
+
+  async function cargarResumen(producto, fuente) {
+    try {
+      const body =
+        fuente === "falabella"
+          ? { tienda: "falabella", product_id: producto.product_id }
+          : { tienda: "mercadolibre", idproducto: producto.idproducto }
+
+      const res = await fetch("http://localhost:8000/resumen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) return
+      const data = await res.json()
+
+      if (fuente === "falabella") setResumenFal(data)
+      else setResumenML(data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   function handleBuscar() { buscar(query, k) }
-  function handleKey(e)   { if (e.key === 'Enter') handleBuscar() }
+  function handleKey(e) { if (e.key === 'Enter') handleBuscar() }
 
   return (
     <div style={s.page}>
@@ -19,9 +51,9 @@ export default function App() {
       <aside style={s.sidebar}>
         <div style={s.sidebarHeader}>
           <div style={s.logoRow}>
-            <img src="/fotos/Falabella.png"    alt="Falabella"    style={s.logoFal} />
+            <img src="/fotos/Falabella.png" alt="Falabella" style={s.logoFal} />
             <span style={s.logoDivider}>vs</span>
-            <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.logoML}  />
+            <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.logoML} />
           </div>
           <p style={s.subtitle}>Compara productos con búsqueda semántica e inteligencia artificial</p>
         </div>
@@ -72,73 +104,111 @@ export default function App() {
       {/* ── CONTENIDO ── */}
       <main style={s.main}>
 
-        {!resultados && !cargando && !error && (
-          <div style={s.empty}>
-            <Search size={32} style={{ color: '#ccc' }} />
-            <p style={s.emptyText}>Ingresa un producto en la barra lateral para empezar a comparar.</p>
-          </div>
-        )}
+        {/* ── Tabs ── */}
+        <div style={s.tabs}>
+          <button style={s.tab(tab === 'buscar')} onClick={() => setTab('buscar')}>
+            <Search size={13} />
+            Comparar productos
+          </button>
+          <button style={s.tab(tab === 'stats')} onClick={() => setTab('stats')}>
+            <BarChart2 size={13} />
+            Explorar datos
+          </button>
+        </div>
 
-        {cargando && (
-          <div style={s.stateBox}>
-            <Loader2 size={28} style={s.spinIcon} />
-            <p style={s.stateText}>Analizando reseñas y generando resumen con IA…</p>
-          </div>
-        )}
+        {/* ── Tab: Estadísticas ── */}
+        {tab === 'stats' && <StatsPanel />}
 
-        {error && (
-          <div style={{ ...s.stateBox, borderColor: '#fca5a5' }}>
-            <AlertCircle size={22} style={{ color: '#dc2626' }} />
-            <p style={{ ...s.stateText, color: '#dc2626' }}>{error}</p>
-          </div>
-        )}
-
-        {resultados && !cargando && (
+        {/* ── Tab: Búsqueda ── */}
+        {tab === 'buscar' && (
           <>
-            {/* Columnas lado a lado */}
-            <div style={s.columns}>
-              {/* Falabella */}
-              <div style={s.column}>
-                <div style={s.colHeader}>
-                  <img src="/fotos/Falabella.png" alt="Falabella" style={s.colLogo} />
-                  <span style={s.colCount}>{resultados.falabella.length} resultados</span>
-                </div>
-                <div style={s.cardList}>
-                  {resultados.falabella.map((p, i) => (
-                    <ProductCard key={i} producto={p} fuente="falabella" />
-                  ))}
-                </div>
+            {!resultados && !cargando && !error && (
+              <div style={s.empty}>
+                <Search size={32} style={{ color: '#ccc' }} />
+                <p style={s.emptyText}>Ingresa un producto en la barra lateral para empezar a comparar.</p>
               </div>
+            )}
 
-              {/* Divider */}
-              <div style={s.colDivider} />
+            {cargando && (
+              <div style={s.stateBox}>
+                <Loader2 size={28} style={s.spinIcon} />
+                <p style={s.stateText}>Buscando productos…</p>
+              </div>
+            )}
 
-              {/* MercadoLibre */}
-              <div style={s.column}>
-                <div style={s.colHeader}>
-                  <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.colLogo} />
-                  <span style={s.colCount}>{resultados.mercadolibre.length} resultados</span>
-                </div>
-                <div style={s.cardList}>
-                  {resultados.mercadolibre.map((p, i) => (
-                    <ProductCard key={i} producto={p} fuente="mercadolibre" />
-                  ))}
-                </div>
+            {error && (
+              <div style={{ ...s.stateBox, borderColor: '#fca5a5' }}>
+                <AlertCircle size={22} style={{ color: '#dc2626' }} />
+                <p style={{ ...s.stateText, color: '#dc2626' }}>{error}</p>
               </div>
-            </div>
+            )}
 
-            {/* ── RESUMEN IA ── */}
-            <div style={s.nlgSection}>
-              <div style={s.nlgHeader}>
-                <Sparkles size={15} style={{ color: '#888' }} />
-                <span style={s.nlgTitle}>Resumen generado por IA</span>
-                <div style={s.nlgLine} />
-              </div>
-              <div style={s.nlgGrid}>
-                <NLGBox nlg={resultados.nlg_fal} fuente="falabella"    />
-                <NLGBox nlg={resultados.nlg_ml}  fuente="mercadolibre" />
-              </div>
-            </div>
+            {resultados && !cargando && (
+              <>
+                {/* Columnas lado a lado */}
+                <div style={s.columns}>
+                  {/* Falabella */}
+                  <div style={s.column}>
+                    <div style={s.colHeader}>
+                      <img src="/fotos/Falabella.png" alt="Falabella" style={s.colLogo} />
+                      <span style={s.colCount}>{resultados.falabella.length} resultados</span>
+                    </div>
+                    <div style={s.cardList}>
+                      {resultados.falabella.map((p, i) => (
+                        <ProductCard
+                          key={i}
+                          producto={p}
+                          fuente="falabella"
+                          seleccionado={seleccionFal === p.product_id}
+                          onClick={() => {
+                            setSeleccionFal(p.product_id)
+                            cargarResumen(p, "falabella")
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div style={s.colDivider} />
+
+                  {/* MercadoLibre */}
+                  <div style={s.column}>
+                    <div style={s.colHeader}>
+                      <img src="/fotos/MercadoLibre.png" alt="MercadoLibre" style={s.colLogo} />
+                      <span style={s.colCount}>{resultados.mercadolibre.length} resultados</span>
+                    </div>
+                    <div style={s.cardList}>
+                      {resultados.mercadolibre.map((p, i) => (
+                        <ProductCard
+                          key={i}
+                          producto={p}
+                          fuente="mercadolibre"
+                          seleccionado={seleccionML === p.idproducto}
+                          onClick={() => {
+                            setSeleccionML(p.idproducto)
+                            cargarResumen(p, "mercadolibre")
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── RESUMEN IA ── */}
+                <div style={s.nlgSection}>
+                  <div style={s.nlgHeader}>
+                    <Sparkles size={15} style={{ color: '#888' }} />
+                    <span style={s.nlgTitle}>Resumen generado por IA</span>
+                    <div style={s.nlgLine} />
+                  </div>
+                  <div style={s.nlgGrid}>
+                    <NLGBox nlg={resumenFal} fuente="falabella" />
+                    <NLGBox nlg={resumenML} fuente="mercadolibre" />
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
       </main>
@@ -156,7 +226,6 @@ const s = {
     color: '#1a1a1a',
   },
 
-  // Sidebar
   sidebar: {
     width: 320,
     flexShrink: 0,
@@ -184,10 +253,7 @@ const s = {
     gap: 14,
     flexWrap: 'wrap',
   },
-  logoFal: {
-    height: 60,
-    objectFit: 'contain',
-  },
+  logoFal: { height: 60, objectFit: 'contain' },
   logoDivider: {
     fontSize: 11,
     fontWeight: 600,
@@ -195,10 +261,7 @@ const s = {
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
   },
-  logoML: {
-    height: 78,
-    objectFit: 'contain',
-  },
+  logoML: { height: 78, objectFit: 'contain' },
   subtitle: {
     fontSize: 12.5,
     color: '#888',
@@ -206,7 +269,6 @@ const s = {
     lineHeight: 1.5,
   },
 
-  // Search form
   searchForm: {
     display: 'flex',
     flexDirection: 'column',
@@ -277,7 +339,6 @@ const s = {
     borderTop: '1px solid #E8E8E6',
   },
 
-  // Main content
   main: {
     flex: 1,
     minWidth: 0,
@@ -288,6 +349,29 @@ const s = {
     gap: '2rem',
     maxWidth: 1500,
   },
+
+  // Tabs
+  tabs: {
+    display: 'flex',
+    gap: 2,
+    borderBottom: '1px solid #E8E8E6',
+    marginBottom: -8,
+  },
+  tab: (active) => ({
+    padding: '8px 16px',
+    fontSize: 13,
+    fontWeight: active ? 600 : 400,
+    color: active ? '#1a1a1a' : '#aaa',
+    background: 'none',
+    border: 'none',
+    borderBottom: active ? '2px solid #1a1a1a' : '2px solid transparent',
+    cursor: 'pointer',
+    marginBottom: -1,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    transition: 'color 0.15s',
+  }),
 
   empty: {
     flex: 1,
@@ -306,7 +390,6 @@ const s = {
     margin: 0,
   },
 
-  // Estado
   stateBox: {
     background: '#fff',
     border: '1px solid #E8E8E6',
@@ -323,7 +406,6 @@ const s = {
     margin: 0,
   },
 
-  // Columnas
   columns: {
     display: 'flex',
     gap: 0,
@@ -349,15 +431,8 @@ const s = {
     paddingBottom: 12,
     borderBottom: '1px solid #F0F0EE',
   },
-  colLogo: {
-    height: 36,
-    objectFit: 'contain',
-  },
-  colCount: {
-    fontSize: 11,
-    color: '#aaa',
-    fontWeight: 500,
-  },
+  colLogo: { height: 36, objectFit: 'contain' },
+  colCount: { fontSize: 11, color: '#aaa', fontWeight: 500 },
   colDivider: {
     width: 1,
     alignSelf: 'stretch',
@@ -370,7 +445,6 @@ const s = {
     gap: 16,
   },
 
-  // NLG
   nlgSection: {
     display: 'flex',
     flexDirection: 'column',

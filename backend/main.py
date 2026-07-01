@@ -1,6 +1,7 @@
 import pandas as pd
 import faiss
 import json
+import re
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
+from playwright.sync_api import sync_playwright
+from pysentimiento import create_analyzer
 
 load_dotenv()
 
@@ -27,9 +30,11 @@ index_ml   = faiss.read_index("index_mercadolibre.faiss")
 index_fal  = faiss.read_index("index_falabella.faiss")
 textos_ml  = pd.read_csv("textos_ml.csv")
 textos_fal = pd.read_csv("textos_falabella.csv")
-df_ml      = pd.read_csv("reviews_version_final.csv",     encoding="utf-8-sig")
+df_ml      = pd.read_csv("dataset_final.csv",     encoding="utf-8-sig")
 df_fal     = pd.read_csv("reseñas_hibrido_con_texto.csv", encoding="utf-8-sig")
 df_fal["reseña"] = df_fal["reseña"].fillna("")
+
+print(df_fal.columns.tolist())
 
 # ── CSV de precios Falabella (cruce por URL) ──────────────────────
 df_precios_fal  = pd.read_csv("productos_falabella.csv", encoding="utf-8-sig")
@@ -41,10 +46,147 @@ precios_ml_idx = df_precios_ml.set_index("idproducto")
 
 api_key = os.getenv("GROQ_API_KEY")
 cliente_groq = Groq(api_key=api_key)
+
+# ── Clasificador de sentimiento (BETO en español) ─────────────────
+print("Cargando clasificador de sentimiento...")
+analizador_sentimiento = create_analyzer(task="sentiment", lang="es")
+print("✅ Clasificador listo")
+
+# ── Pre-cálculo de stats ──────────────────────────────────────────
+def _precio_fal_a_float(precio_str):
+    """Convierte 'S/ 1,749' -> 1749.0"""
+    try:
+        return float(re.sub(r"[^\d.]", "", str(precio_str).replace(",", "")))
+    except:
+        return None
+
+df_precios_fal["precio_num"] = df_precios_fal["precio"].apply(_precio_fal_a_float)
+
+_stats_cache = None
+
+def _calcular_stats():
+    global _stats_cache
+    if _stats_cache:
+        return _stats_cache
+
+    # Distribución de ratings
+    dist_ratings_ml = (
+        df_ml["rating"]
+        .value_counts()
+        .reindex([1, 2, 3, 4, 5], fill_value=0)
+        .sort_index()
+        .to_dict()
+    )
+    dist_ratings_ml = {str(k): int(v) for k, v in dist_ratings_ml.items()}
+
+    dist_ratings_fal = (
+        df_fal["rating"]
+        .value_counts()
+        .reindex([1, 2, 3, 4, 5], fill_value=0)
+        .sort_index()
+        .to_dict()
+    )
+    dist_ratings_fal = {str(k): int(v) for k, v in dist_ratings_fal.items()}
+
+    # Top marcas por número de productos
+    top_marcas_ml = (
+        df_precios_ml["marca"]
+        .dropna()
+        .value_counts()
+        .head(10)
+        .to_dict()
+    )
+    top_marcas_ml = {str(k): int(v) for k, v in top_marcas_ml.items()}
+
+    top_marcas_fal = (
+        df_precios_fal["marca"]
+        .dropna()
+        .value_counts()
+        .head(10)
+        .to_dict()
+    )
+    top_marcas_fal = {str(k): int(v) for k, v in top_marcas_fal.items()}
+
+    # Rating promedio por categoría (solo ML tiene categoría)
+    rating_por_cat = (
+        df_ml.groupby("categoria")["rating"]
+        .agg(promedio="mean", total="count")
+        .query("total >= 50")
+        .sort_values("promedio", ascending=False)
+        .head(12)
+        .reset_index()
+    )
+    rating_por_categoria = [
+        {
+            "categoria": row["categoria"],
+            "rating_promedio": round(float(row["promedio"]), 2),
+            "total_resenas": int(row["total"]),
+        }
+        for _, row in rating_por_cat.iterrows()
+    ]
+
+    # Distribución de precios ML (en soles)
+    precios_ml_soles = df_precios_ml[df_precios_ml["moneda"] == "PEN"]["precio"].dropna()
+    bins   = [0, 100, 300, 500, 1000, 2000, 5000, float("inf")]
+    labels = ["<100", "100-300", "300-500", "500-1k", "1k-2k", "2k-5k", "5k+"]
+    dist_precios_ml = {}
+    for i, label in enumerate(labels):
+        lo, hi = bins[i], bins[i + 1]
+        dist_precios_ml[label] = int(((precios_ml_soles >= lo) & (precios_ml_soles < hi)).sum())
+
+    # Distribución de precios Falabella
+    precios_fal = df_precios_fal["precio_num"].dropna()
+    dist_precios_fal = {}
+    for i, label in enumerate(labels):
+        lo, hi = bins[i], bins[i + 1]
+        dist_precios_fal[label] = int(((precios_fal >= lo) & (precios_fal < hi)).sum())
+
+    # Resumen general
+    resumen = {
+        "ml": {
+            "total_productos":   int(len(df_precios_ml)),
+            "total_resenas":     int(len(df_ml)),
+            "rating_promedio":   round(float(df_ml["rating"].mean()), 2),
+            "precio_promedio":   round(float(precios_ml_soles.mean()), 2),
+            "total_marcas":      int(df_precios_ml["marca"].nunique()),
+            "total_categorias":  int(df_precios_ml["categoria"].nunique()),
+        },
+        "falabella": {
+            "total_productos":   int(len(df_precios_fal)),
+            "total_resenas":     int(len(df_fal)),
+            "rating_promedio":   round(float(df_fal["rating"].mean()), 2),
+            "precio_promedio":   round(float(precios_fal.mean()), 2),
+            "total_marcas":      int(df_precios_fal["marca"].nunique()),
+        },
+    }
+
+    _stats_cache = {
+        "resumen":              resumen,
+        "dist_ratings":         {"ml": dist_ratings_ml, "falabella": dist_ratings_fal},
+        "top_marcas":           {"ml": top_marcas_ml,   "falabella": top_marcas_fal},
+        "rating_por_categoria": rating_por_categoria,
+        "dist_precios":         {"ml": dist_precios_ml, "falabella": dist_precios_fal},
+    }
+    return _stats_cache
+
 print("✅ Todo listo")
 
 
 # ── Funciones ─────────────────────────────────────────────────────
+
+def obtener_imagen_ml(url):
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            meta = page.locator('meta[property="og:image"]').first
+            imagen = meta.get_attribute("content")
+            browser.close()
+            return imagen
+    except Exception as e:
+        print(e)
+        return None
 
 def buscar_en_ml(query: str, k: int = 5):
     q_vec = modelo.encode([query]).astype("float32")
@@ -61,30 +203,26 @@ def buscar_en_ml(query: str, k: int = 5):
             "distancia":  round(float(d), 3),
         }
 
-        # Cruce con CSV de precios ML
         if id_producto in precios_ml_idx.index:
             extra = precios_ml_idx.loc[id_producto]
             moneda  = str(extra["moneda"]) if pd.notna(extra["moneda"]) else "PEN"
             precio  = extra["precio"]
-            resultado["precio"]  = f"{moneda} {precio}"
-            resultado["moneda"]  = moneda
-            resultado["marca"]   = str(extra["marca"]) if pd.notna(extra["marca"]) else None
+            resultado["precio"]      = f"{moneda} {precio}"
+            resultado["moneda"]      = moneda
+            resultado["marca"]       = str(extra["marca"]) if pd.notna(extra["marca"]) else None
+            resultado["num_resenas"] = len(df_ml[df_ml["idproducto"] == id_producto])
+
+            # resultado["imagen"] = obtener_imagen_ml(resultado["url"])
 
         resultados.append(resultado)
     return resultados
 
 
 def extraer_id_falabella(url: str) -> str:
-    """Extrae el ID de producto desde la URL de Falabella.
-    Ej: .../product/18245973/lavaseca.../18245973 -> '18245973'
-    """
     return url.rstrip("/").split("/")[-1]
 
 
 def construir_urls_imagen_falabella(url: str) -> dict:
-    """El prefijo (falabellaPE vs tottusPE) y el sufijo del ID (_1 vs _01)
-    varían entre productos, así que se generan las 4 combinaciones para
-    que el frontend haga fallback en cascada."""
     id_producto = extraer_id_falabella(url)
     prefijos = ["falabellaPE", "tottusPE"]
     sufijos  = ["_1", "_01"]
@@ -113,7 +251,6 @@ def buscar_en_falabella(query: str, k: int = 5):
             **construir_urls_imagen_falabella(url),
         }
 
-        # Cruce con CSV de precios si la URL coincide
         if url in precios_fal_idx.index:
             extra = precios_fal_idx.loc[url]
             resultado["precio"]      = str(extra["precio"])
@@ -130,21 +267,91 @@ def analizar_resenas(df, col_id, id_valor, col_resena, col_rating):
     grupo[col_resena] = grupo[col_resena].fillna("")
     rating_prom = grupo[col_rating].mean()
     total       = len(grupo)
-    positivas   = grupo[grupo[col_rating] >= 4][col_resena].tolist()
-    negativas   = grupo[grupo[col_rating] <= 2][col_resena].tolist()
+
+    textos_con_contenido = grupo[grupo[col_resena].str.len() > 15][col_resena].tolist()
+
+    if textos_con_contenido:
+        muestra = textos_con_contenido[:40]
+        try:
+            preds = analizador_sentimiento.predict(muestra)
+            if not isinstance(preds, list):
+                preds = [preds]
+            positivas = [t for t, p in zip(muestra, preds) if p.output == "POS"]
+            negativas = [t for t, p in zip(muestra, preds) if p.output == "NEG"]
+        except Exception:
+            positivas = grupo[grupo[col_rating] >= 4][col_resena].tolist()
+            negativas = grupo[grupo[col_rating] <= 2][col_resena].tolist()
+    else:
+        positivas = grupo[grupo[col_rating] >= 4][col_resena].tolist()
+        negativas = grupo[grupo[col_rating] <= 2][col_resena].tolist()
+
+    total_clasificadas = max(len(positivas) + len(negativas), 1)
     return {
         "total":             int(total),
         "rating_promedio":   round(float(rating_prom), 2),
-        "pct_positivas":     round(len(positivas) / total * 100, 1),
-        "pct_negativas":     round(len(negativas) / total * 100, 1),
+        "pct_positivas":     round(len(positivas) / total_clasificadas * 100, 1),
+        "pct_negativas":     round(len(negativas) / total_clasificadas * 100, 1),
         "positivas_muestra": sorted(positivas, key=len, reverse=True)[:4],
         "negativas_muestra": sorted(negativas, key=len, reverse=True)[:3],
     }
 
 
-def generar_resumen(nombre_producto: str, analisis: dict) -> dict:
+def extraer_aspectos(textos: list) -> list:
+    validos = [str(t).strip() for t in textos if t and len(str(t).strip()) > 10]
+    if not validos:
+        return []
+
+    muestra = validos[:20]
+    resenas_str = "\n".join(f"- {t}" for t in muestra)
+
+    prompt = f"""Analizá estas reseñas de un producto electrónico de e-commerce peruano.
+Identificá los aspectos específicos que los usuarios mencionan (solo los que realmente aparecen en el texto).
+
+RESEÑAS:
+{resenas_str}
+
+Respondé EXACTAMENTE en este formato JSON (sin texto extra, sin markdown):
+[
+  {{"aspecto": "nombre del aspecto", "sentimiento": "POS", "score": 4.2, "menciones": 3}},
+  {{"aspecto": "otro aspecto", "sentimiento": "NEG", "score": 2.1, "menciones": 2}}
+]
+
+Reglas:
+- Solo incluir aspectos que aparezcan explícitamente en las reseñas
+- sentimiento: "POS", "NEG" o "NEU"
+- score: del 1.0 al 5.0 según las menciones
+- menciones: cuántas reseñas lo nombran
+- máximo 6 aspectos, ordenados de mayor a menor menciones
+- si no hay aspectos claros devolvé []"""
+
+    try:
+        resp = cliente_groq.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=350,
+        )
+        texto = resp.choices[0].message.content.strip()
+        if texto.startswith("```json"):
+            texto = texto.split("```json")[1].split("```")[0].strip()
+        elif texto.startswith("```"):
+            texto = texto.split("```")[1].strip()
+        resultado = json.loads(texto)
+        return resultado if isinstance(resultado, list) else []
+    except Exception:
+        return []
+
+
+def generar_resumen(nombre_producto: str, analisis: dict, aspectos: list = None) -> dict:
     if not analisis:
         return {"error": "Sin reseñas"}
+
+    aspectos_str = ""
+    if aspectos:
+        aspectos_str = "\n\nASPECTOS DETECTADOS POR LOS USUARIOS:\n" + "\n".join(
+            f"- {a['aspecto'].upper()}: {a['sentimiento']} (score {a['score']}/5, {a['menciones']} menciones)"
+            for a in aspectos
+        )
 
     prompt = f"""Eres un asistente de comparación de productos para un e-commerce peruano.
 Analiza las siguientes reseñas reales de clientes y genera un resumen estructurado.
@@ -153,7 +360,7 @@ PRODUCTO: {nombre_producto}
 - Total reseñas         : {analisis['total']}
 - Rating promedio       : {analisis['rating_promedio']}/5
 - % opiniones positivas : {analisis['pct_positivas']}%
-- % opiniones negativas : {analisis['pct_negativas']}%
+- % opiniones negativas : {analisis['pct_negativas']}%{aspectos_str}
 
 RESEÑAS POSITIVAS (muestra):
 {chr(10).join(f'- {r}' for r in analisis['positivas_muestra'])}
@@ -193,10 +400,20 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 3
 
+class ResumenRequest(BaseModel):
+    tienda: str
+    idproducto: str | None = None
+    product_id: int | None = None
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/stats")
+def stats():
+    return _calcular_stats()
 
 
 @app.post("/buscar")
@@ -215,21 +432,41 @@ def nlg(req: QueryRequest):
     if not ml_res or not fal_res:
         raise HTTPException(status_code=404, detail="Sin resultados")
 
-    top_ml  = ml_res[0]
-    top_fal = fal_res[0]
-
-    an_ml  = analizar_resenas(df_ml,  "idproducto", top_ml["idproducto"],  "resena",  "rating")
-    an_fal = analizar_resenas(df_fal, "product_id", top_fal["product_id"], "reseña",  "rating")
-
     return {
         "falabella":    fal_res,
         "mercadolibre": ml_res,
-        "nlg_fal": {
-            "nombre": top_fal["nombre"],
-            **generar_resumen(top_fal["nombre"], an_fal),
-        },
-        "nlg_ml": {
-            "nombre": top_ml["nombre"],
-            **generar_resumen(top_ml["nombre"], an_ml),
-        },
     }
+
+
+@app.post("/resumen")
+def resumen(req: ResumenRequest):
+
+    if req.tienda == "mercadolibre":
+        grupo = df_ml[df_ml["idproducto"] == req.idproducto]
+        if grupo.empty:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+        nombre   = grupo["nombre"].iloc[0]
+        textos   = grupo["resena"].fillna("").tolist()
+        an       = analizar_resenas(df_ml, "idproducto", req.idproducto, "resena", "rating")
+        aspectos = extraer_aspectos(textos)
+        return {
+            "nombre":   nombre,
+            "aspectos": aspectos,
+            **generar_resumen(nombre, an, aspectos),
+        }
+
+    elif req.tienda == "falabella":
+        grupo = df_fal[df_fal["product_id"] == req.product_id]
+        if grupo.empty:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+        nombre   = grupo["producto"].iloc[0]
+        textos   = grupo["reseña"].fillna("").tolist()
+        an       = analizar_resenas(df_fal, "product_id", req.product_id, "reseña", "rating")
+        aspectos = extraer_aspectos(textos)
+        return {
+            "nombre":   nombre,
+            "aspectos": aspectos,
+            **generar_resumen(nombre, an, aspectos),
+        }
+
+    raise HTTPException(status_code=400, detail="Tienda inválida")

@@ -3,7 +3,7 @@ import { Star, FileText, ExternalLink, Gauge, ImageOff } from 'lucide-react'
 
 // Colores de marca
 const BRAND = {
-  falabella:    { bg: '#F2FAF0', text: '#5a9a2a', border: '#d4edca' },
+  falabella: { bg: '#F2FAF0', text: '#5a9a2a', border: '#d4edca' },
   mercadolibre: { bg: '#FFF9E6', text: '#a07c00', border: '#f0e099' },
 }
 
@@ -78,13 +78,30 @@ function ImagenProducto({ producto }) {
   )
 }
 
-export default function ProductCard({ producto, fuente }) {
+export default function ProductCard({
+  producto,
+  fuente,
+  onClick,
+  seleccionado,
+}) {
   const brand = BRAND[fuente]
   const label = fuente === 'falabella' ? 'Falabella' : 'MercadoLibre'
   const precioFormateado = formatearPrecio(producto.precio)
 
   return (
-    <div style={s.card}>
+    <div
+      onClick={onClick}
+      style={{
+        ...s.card,
+        cursor: "pointer",
+        border: seleccionado
+          ? "2px solid #2563eb"
+          : "1px solid #EBEBEA",
+        boxShadow: seleccionado
+          ? "0 0 0 3px rgba(37,99,235,.12)"
+          : undefined,
+      }}
+    >
       {/* Imagen del producto */}
       <ImagenProducto producto={producto} />
 
